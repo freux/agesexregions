@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html  lang="en" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout}">
+      
+	<head>
+<link th:href="@{./favicon.ico}" type="image/x-icon"> 
+<link rel="shortcut icon" th:href="@{./favicon.ico}" type="image/x-icon">
+		<!-- Import Leaflet CSS -->
+		<link rel="stylesheet" th:href="@{app/leaflet/leaflet.css}">
+		<style>
+		    #map {
+		        height: calc(100vh - 0px) !important;
+		    }
+			.leaflet-container {  /* all maps */
+			    width:  100%;
+			    /* height: calc(100vh - 60px); */
+			    height: 100vh;
+			}
+			
+			.legend, .temporal-legend {
+			    padding: 6px 10px;
+			    font: 14px/16px Arial, Helvetica, sans-serif;
+			    background: rgba(0,0,0,0.85);
+			    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+			    border-radius: 5px;
+			    color:whitesmoke;
+			}
+			
+			#legendTitle {
+			    text-align: center;
+			    margin-bottom: 15px;
+			    color: whitesmoke;
+			    /* font-variant: small-caps; */
+			    font-weight: bold;
+			}
+			
+			.symbolsContainer {
+			    float: left;
+			    margin-left: 50px;
+			}
+			
+			.legendCircle {
+			    border-radius:50%;
+			    border: 1px solid #537898;
+			    background: rgba(0,128,128,0.5);
+			    display: inline-block;
+			}
+			
+			.legendValue {
+			    position: absolute;
+			    right: 12px;
+			    color:whitesmoke;
+			    font-size:10pt;
+			    text-align:center;
+			    font-weight: bold;
+			}
+			
+			.info {
+			    width:30vw;
+			    height:48vh;
+			    /* width:20vw; */
+			    /* height:300px; */
+			    padding: 6px 10px;
+			    font: 14px/16px Arial, Helvetica, sans-serif;
+			    background: rgba(0,0,0,0.85);
+			    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+			    border-radius: 5px;
+			    color:whitesmoke;
+			    /* max-width:100%;
+			    max-height:100%; */
+			}
+			
+			.info h5 {
+			    margin: 0 0 5px;
+			    color: #777;
+			    text-align: center;
+			    /* margin-bottom: 15px; */
+			    color: whitesmoke;
+			    /* font-variant: small-caps; */
+			    font-weight: bold;
+			}
+			
+			.info #horBarChart {
+			    width: 100% !important;
+			    max-width: 800px;
+			    /* height:inherit; */
+			}
+			
+			.leaflet-control-layers {
+			    float:right;
+			    top:380px;
+			    right:0;
+			    /* margin-left:-200px; */
+			    position:absolute;
+			    background: rgba(0,0,0,0.85);
+			    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+			    border-radius: 5px;
+			    color:whitesmoke;
+			}
+		</style>
+	</head>
+	<body layout:fragment="content">
+		<!-- Import Leaflet JS -->
+		<script th:src="@{app/jquery/dist/jquery.min.js}"></script>
+		<script th:src="@{app/leaflet/leaflet.js}"></script>
+		<script th:src="@{app/extscripts/js/chart.umd.js}"></script>
+<!--		<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>  -->
+		
+		<div id="map"></div>
+		
+		<script type="text/javascript">
+			
+			// Url Endpoints
+			var dataUrl = "http://localhost/regionpopulation";
+			var strataUrl = "http://localhost/regionstrata";
+			
+			// Chart Object
+			var strataChart = null;
+			
+			// Basemap urls
+			var osm_humanitarian = L.tileLayer('http://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+			});
+			
+			var osm_map = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+			});
+			var esri_dark_gray_base = L.tileLayer('http://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+				attribution: '&copy; <a href="http://services.arcgisonline.com/arcgis/rest/services">ESRI</a> arcgisonline'
+			});
+			var world_street_map = L.tileLayer('http://services.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+				attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
+			});
+			var world_imagery = L.tileLayer('http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+				attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+			});
+			
+			function showStrata(id, strRegion)
+			{
+				var fullReq = strataUrl+"/"+id;
+				$.getJSON(fullReq, function(data) {
+        var ctx = document.getElementById("strata-chart").getContext('2d');
+        if(strataChart){
+        	strataChart.clear();
+        	strataChart.destroy();
+    	}
+
+        strataChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+            	labels: ["0", "0-4", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74", "75-79", "80+"],
+                datasets: [{
+                    label: 'Female',
+                    backgroundColor: "#FB3569",
+                    data: [data.f0,data.f4,data.f9,data.f14, data.f19, data.f24,data.f29,data.f34,data.f39, data.f44,data.f49,
+                    		data.f54, data.f59,data.f64,data.f69,data.f74,data.f79, data.f80plus],
+                    }, {
+                    label: 'Male',
+                    backgroundColor: "#82CD47",
+                    data: [data.m0,data.m4,data.m9,data.m14, data.m19, data.m24,data.m29,data.m34,data.m39, data.m44,data.m49,
+                    		data.m54, data.m59,data.m64,data.m69,data.m74,data.m79, data.m80plus],
+                }],
+            },
+
+            options: {
+            	plugins: {
+                tooltip: {
+                    displayColors: true,
+                    animation: true,
+                    callbacks: {
+                        mode: 'index',
+						label: function(context) {
+              				let lbl = context.dataset.label || '';
+
+              				if (lbl) {
+                            	lbl += ': ';
+                        	}
+
+            				let tst = context.parsed.x
+            				if (tst !== null)
+            				{
+            					lbl += Math.abs(tst)
+            					return lbl;
+            				}
+            				return context;
+            			},
+            			title: function(context) {
+               				return "Age: "+context[0].label;
+            			}
+
+                        
+                    }
+                }
+                },
+                scales: {
+                    x: {
+                    	stacked: true,
+                        ticks: {
+                    // Include a dollar sign in the ticks
+                    		callback: function(value, index, ticks) {	
+                        		return Math.abs(value);
+                    		}
+                		}
+
+                    },
+                    y: {
+                        stacked: true,
+                    }
+                },
+                indexAxis: 'y',
+                responsive: true
+            }
+        });
+        var tx = document.getElementById("chart-upper-wrapper");
+        tx.innerText = "Region: " + strRegion;	
+				});
+			};
+			// Initialize the map
+			var map = L.map('map', {
+				layers: [osm_map] // Default basemap
+			}).setView([40.430, 44.736], 9)
+			
+			// Initialize basemaps
+		    var baseLayers = {
+		        "Open Street Map": osm_map,
+		        "OSM Humanitarian": osm_humanitarian,
+		        "Dark Gray Base": esri_dark_gray_base,
+		        "World Street Map": world_street_map,
+		        "World Imagery": world_imagery
+		    };
+		    
+		    // Create layer groups
+		    var point_layers = L.layerGroup().addTo(map);
+		    var class_layers = L.layerGroup().addTo(map);
+		    
+/*		    $.getJSON(dataUrl, function(data) {
+				$.each(data, function(i, item) {
+					var cpoints = L.circle(L.latLng(item.position.coordinates[1], item.position.coordinates[0]), {
+		                color: '#009999',
+		                radius: (item.maleNum + item.femaleNum )/ 100,
+		                weight: 1.0,
+		                fillOpacity: 0.7
+		            });
+		            cpoints.bindPopup(
+						"<h4><b>Suburb:</b> " + item.region.toString() + "</h4>" + 
+						"<h4><b>Population:</b> " + item.maleNum.toString() + " KL </h4>"
+					);
+		            cpoints.on('mouseover', function(e) {
+						this.setStyle({color:'yellow'});
+		                this.openPopup();
+		            });
+		            cpoints.on('mouseout', function(e) {
+						this.setStyle({color:'#009999'});
+		                this.closePopup();
+		            });
+		            point_layers.addLayer(cpoints);
+		        });
+			});  */
+			
+			$.getJSON(dataUrl, function(data) {
+				$.each(data, function(i, item) {
+					if ((item.maleNum + item.femaleNum) < 150000) {
+						var cpoints = L.circle(L.latLng(item.position.coordinates[1], item.position.coordinates[0]), {
+			                color: 'green',
+			                radius: (item.maleNum + item.femaleNum )/ 100,
+			                weight: 1.0,
+			                fillOpacity: 0.7
+			            });
+					} else if ((item.maleNum + item.femaleNum) < 240000) {
+						var cpoints = L.circle(L.latLng(item.position.coordinates[1], item.position.coordinates[0]), {
+			                color: 'teal',
+			                radius: (item.maleNum + item.femaleNum )/ 100,
+			                weight: 1.0,
+			                fillOpacity: 0.7
+			            });
+					} else {
+						var cpoints = L.circle(L.latLng(item.position.coordinates[1], item.position.coordinates[0]), {
+			                color: 'red',
+			                radius: (item.maleNum + item.femaleNum )/ 100,
+			                weight: 1.0,
+			                fillOpacity: 0.7
+			            });
+					}
+		            
+		            cpoints.bindPopup(
+						"<h4><b>Region:</b> " + item.region.toString() + "</h4>" + 
+						"<h4><b>Population:</b> " + (item.maleNum + item.femaleNum).toString() + " pl</h4>" +
+						"<h4><b>Male:</b> " + Number.parseFloat(100*item.maleNum/(item.maleNum + item.femaleNum)).toFixed().toString() + "%  " +
+						"<b>Female:</b> " + Number.parseFloat(100*item.femaleNum/(item.maleNum + item.femaleNum)).toFixed().toString() + "%</h4>"
+					);
+		            cpoints.on('mouseover', function(e) {
+		                this.openPopup();
+		            });
+		            cpoints.on('mouseout', function(e) {
+		                this.closePopup();
+		            });
+   		            cpoints.on('mousedown', function(e) {
+						   showStrata(item.id, item.region.toString());
+		            });
+		            class_layers.addLayer(cpoints);
+		        });
+			});
+			
+			var overlayMaps = {
+				"Water Consumption by Suburb (2017)": point_layers,
+				"Consumption Classification by Suburb (2017)": class_layers
+			}
+		    
+		    // Add the layers control
+		    L.control.layers(baseLayers).addTo(map);
+		    
+		    // Create Legend
+//			  createLegend();
+/*			function createLegend() {
+	            var legend = L.control({position: 'bottomright'});
+	            legend.onAdd = function(map) {
+	                var legendContainer = L.DomUtil.create('div', 'legend');
+	
+	                var symbolsContainer = L.DomUtil.create('div', 'symbolsContainer');
+	
+	                var classes = [6, 11, 20];
+	
+	                var legendCircle;
+	
+	                var lastRadius = 0;
+	
+	                var margin;
+	
+	                $(legendContainer).append("<h5 id='legendTitle'>WATER CONSUMPTION IN (KL)</h5>");
+	
+	                for (var i = 0; i <= classes.length-1; i++) {
+	                    legendCircle = L.DomUtil.create("div", "legendCircle");
+	
+	                    currentRadius = classes[i] * 2;
+	
+	                    margin = -currentRadius - lastRadius - 2;
+	
+	                    $(legendCircle).attr("style", "width: " + currentRadius*2 +
+	                                        "px; height: " + currentRadius*2 +
+	                                        "px; margin-left: " + margin + "px" );
+	
+	                    if (classes[i] == 20) {
+	                        $(legendCircle).append("<span class='legendValue'>" + '11 - ' + classes[i] + '+' + "</span>");
+	                    } else if (classes[i] == 11) {
+	                        $(legendCircle).append("<span class='legendValue'>" + '6 - ' + classes[i] + "</span>");
+	                    } else if (classes[i] == 6) {
+	                        $(legendCircle).append("<span class='legendValue'>" + '0 - ' + classes[i] + "</span>");
+	                    }
+	
+	                    $(symbolsContainer).append(legendCircle);
+	
+	                    lastRadius = currentRadius;
+	
+	                }
+	
+	                $(legendContainer).append(symbolsContainer);
+	
+	                return legendContainer;
+	            };
+	
+	            legend.addTo(map);
+	        }
+*/	        
+			
+		</script>
+	</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
